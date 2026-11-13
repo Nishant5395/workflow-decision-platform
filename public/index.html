@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workflow Decision Platform</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --ink: #1c2330; --muted: #667085; --line: #e3e7ee; --accent: #2f5bea;
+    --ok: #12805c; --okbg: #e3f6ee; --bad: #b42318; --badbg: #fdecea; --warn: #9a6700; --warnbg: #fff4d6; --info: #175cd3; --infobg: #e7efff;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: var(--bg); }
+  header { background: var(--card); border-bottom: 1px solid var(--line); padding: 12px 24px; display: flex; align-items: center; gap: 24px; position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 16px; margin: 0; }
+  nav button { background: none; border: 0; padding: 8px 12px; font: inherit; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; }
+  nav button.active { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+  .spacer { flex: 1; }
+  main { max-width: 1280px; margin: 0 auto; padding: 20px 24px 60px; }
+  .grid { display: grid; grid-template-columns: 420px 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 12px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  select, input, textarea { width: 100%; font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); }
+  textarea { font-family: var(--mono); font-size: 12px; min-height: 260px; resize: vertical; }
+  button.btn { font: inherit; padding: 7px 12px; border-radius: 6px; border: 1px solid var(--line); background: #fff; cursor: pointer; }
+  button.btn:hover { border-color: #b9c2d3; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.danger { color: var(--bad); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .APPROVED { background: var(--okbg); color: var(--ok); }
+  .REJECTED, .FAILED { background: var(--badbg); color: var(--bad); }
+  .MANUAL_REVIEW, .PENDING_RETRY { background: var(--warnbg); color: var(--warn); }
+  .IN_PROGRESS, .RECEIVED { background: var(--infobg); color: var(--info); }
+  .muted { color: var(--muted); }
+  pre { margin: 0; font: 12px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; }
+  .box { background: #fafbfc; border: 1px solid var(--line); border-radius: 8px; padding: 12px; max-height: 520px; overflow: auto; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 14px 0 12px; }
+  .tabs button { background: none; border: 0; padding: 6px 12px; cursor: pointer; font: inherit; color: var(--muted); border-bottom: 2px solid transparent; }
+  .tabs button.active { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); font-size: 13px; vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  tr.click { cursor: pointer; } tr.click:hover { background: #f3f6fd; }
+  .dep { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+  .dep b { font-family: var(--mono); font-size: 12px; }
+  .dep .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .dep button { padding: 3px 8px; font-size: 12px; }
+  .msg { padding: 8px 12px; border-radius: 6px; margin-top: 10px; font-size: 13px; }
+  .msg.err { background: var(--badbg); color: var(--bad); } .msg.ok { background: var(--okbg); color: var(--ok); } .msg.info { background: var(--infobg); color: var(--info); }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 6px; }
+  .hidden { display: none; }
+  .kv { display: grid; grid-template-columns: 110px 1fr; gap: 4px 10px; margin-bottom: 8px; }
+  .kv div:nth-child(odd) { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Workflow Decision Platform</h1>
+  <nav>
+    <button data-view="requests" class="active">Requests</button>
+    <button data-view="workflows">Workflow configuration</button>
+  </nav>
+  <div class="spacer"></div>
+  <span id="chain" class="badge muted">audit chain: …</span>
+</header>
+
+<main>
+<!-- ====================== REQUESTS VIEW ====================== -->
+<section id="view-requests">
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h2>Submit a request</h2>
+        <label for="wf">Workflow</label>
+        <select id="wf"></select>
+        <label for="sample">Sample scenario</label>
+        <select id="sample"></select>
+        <label for="payload">Payload (JSON)</label>
+        <textarea id="payload" spellcheck="false"></textarea>
+        <label for="idem">Idempotency-Key (optional — leave empty to derive one from the payload)</label>
+        <input id="idem" placeholder="e.g. order-123">
+        <div class="row">
+          <button class="btn primary" id="submit">Submit</button>
+          <button class="btn" id="submit-twice" title="Sends the identical request twice to show idempotency">Submit twice</button>
+        </div>
+        <div id="submit-msg"></div>
+      </div>
+
+      <div class="card">
+        <h2>Simulated external dependencies</h2>
+        <div id="deps"></div>
+        <div class="row"><button class="btn" id="process-retries">Run retry worker now</button></div>
+        <div class="muted" style="margin-top:8px">Break a dependency, submit a request that needs it, then restore it and retry.</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card" id="result-card">
+        <h2>Result</h2>
+        <div id="result" class="muted">Submit a request or pick one from the list below.</div>
+      </div>
+      <div class="card">
+        <h2>Recent requests <button class="btn" id="refresh" style="float:right;padding:2px 8px">Refresh</button></h2>
+        <table><thead><tr><th>Created</th><th>Workflow</th><th>Status</th><th>Stage</th><th>Id</th></tr></thead><tbody id="list"></tbody></table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ====================== WORKFLOWS VIEW ====================== -->
+<section id="view-workflows" class="hidden">
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h2>Workflows</h2>
+        <select id="wf-config"></select>
+        <div id="wf-versions" style="margin-top:12px"></div>
+      </div>
+      <div class="card">
+        <h2>How changes work</h2>
+        <div class="muted">Edit the JSON and publish: a new immutable version is created and becomes active for <b>new</b> requests. Requests already created stay pinned to the version they started with. Invalid definitions are rejected with specific errors and nothing is stored. Use “Activate” on an old version to roll back.</div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Definition (JSON)</h2>
+      <textarea id="wf-json" spellcheck="false" style="min-height:560px"></textarea>
+      <label for="wf-note">Change note</label>
+      <input id="wf-note" placeholder="e.g. Raise minimum credit score to 600">
+      <div class="row">
+        <button class="btn" id="wf-validate">Validate</button>
+        <button class="btn primary" id="wf-publish">Publish new version</button>
+        <button class="btn" id="wf-reload">Reload active</button>
+      </div>
+      <div id="wf-msg"></div>
+    </div>
+  </div>
+</section>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let samples = {}, workflows = [], current = null, currentTab = 'explain';
+
+async function api(path, opts = {}) {
+  const res = await fetch('/api' + path, { headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) }, ...opts, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  const text = await res.text();
+  let data; try { data = JSON.parse(text); } catch { data = text; }
+  return { ok: res.ok, status: res.status, data, headers: res.headers };
+}
+const msg = (el, kind, html) => { el.innerHTML = html ? `<div class="msg ${kind}">${html}</div>` : ''; };
+const errText = (r) => { const e = r.data?.error; if (!e) return `HTTP ${r.status}`; const d = (e.details || []).map((x) => typeof x === 'string' ? x : `${x.path || ''} ${x.message || ''}`.trim()); return `<b>${esc(e.code)}</b>: ${esc(e.message)}${d.length ? '<ul>' + d.map((x) => `<li>${esc(x)}</li>`).join('') + '</ul>' : ''}`; };
+
+// ---- navigation
+document.querySelectorAll('nav button').forEach((b) => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach((x) => x.classList.toggle('active', x === b));
+  for (const v of ['requests', 'workflows']) $('#view-' + v).classList.toggle('hidden', v !== b.dataset.view);
+  if (b.dataset.view === 'workflows') loadWorkflowConfig();
+});
+
+// ---- init
+async function init() {
+  samples = (await api('/samples')).data;
+  workflows = (await api('/workflows')).data.workflows;
+  $('#wf').innerHTML = workflows.map((w) => `<option value="${esc(w.id)}">${esc(w.name)} (v${w.activeVersion})</option>`).join('');
+  $('#wf-config').innerHTML = $('#wf').innerHTML;
+  onWorkflowChange();
+  refreshAll();
+}
+function onWorkflowChange() {
+  const list = samples[$('#wf').value] || [];
+  $('#sample').innerHTML = list.map((s, i) => `<option value="${i}">${esc(s.name)}</option>`).join('');
+  onSampleChange();
+}
+function onSampleChange() {
+  const s = (samples[$('#wf').value] || [])[Number($('#sample').value)];
+  $('#payload').value = s ? JSON.stringify(s.payload, null, 2) : '{}';
+}
+$('#wf').onchange = onWorkflowChange;
+$('#sample').onchange = onSampleChange;
+
+// ---- submit
+async function submit() {
+  let payload;
+  try { payload = JSON.parse($('#payload').value); } catch (e) { msg($('#submit-msg'), 'err', 'Payload is not valid JSON: ' + esc(e.message)); return null; }
+  const headers = $('#idem').value.trim() ? { 'Idempotency-Key': $('#idem').value.trim() } : {};
+  const r = await api('/requests', { method: 'POST', headers, body: { workflowId: $('#wf').value, payload } });
+  if (!r.ok) { msg($('#submit-msg'), 'err', errText(r)); return null; }
+  msg($('#submit-msg'), r.data.replayed ? 'info' : 'ok', r.data.replayed ? 'Duplicate detected: returned the <b>original</b> request (no new work done).' : 'Request created.');
+  await show(r.data.request.id); refreshAll();
+  return r.data;
+}
+$('#submit').onclick = submit;
+$('#submit-twice').onclick = async () => {
+  const a = await submit(); if (!a) return;
+  const b = await submit(); if (!b) return;
+  msg($('#submit-msg'), 'info', `Sent twice. First: <code>${esc(a.request.id.slice(0, 8))}</code> (replayed=${a.replayed}). Second: <code>${esc(b.request.id.slice(0, 8))}</code> (replayed=${b.replayed}). ${a.request.id === b.request.id ? 'Same request — idempotent.' : 'DIFFERENT requests!'}`);
+};
+
+// ---- result panel
+async function show(id) {
+  const [r, exp, audit] = await Promise.all([api('/requests/' + id), api(`/requests/${id}/explanation`), api(`/requests/${id}/audit`)]);
+  current = { req: r.data.request, history: r.data.history, exp: exp.data, audit: audit.data.events };
+  renderResult();
+}
+function renderResult() {
+  if (!current) return;
+  const { req, exp } = current;
+  const actions = [];
+  if (req.status === 'PENDING_RETRY') actions.push(`<button class="btn primary" onclick="doRetry()">Retry now</button>`);
+  if (req.status === 'MANUAL_REVIEW') actions.push(`<button class="btn primary" onclick="doReview('approve')">Approve (as reviewer)</button><button class="btn danger" onclick="doReview('reject')">Reject</button>`);
+  const tabs = [['explain', 'Explanation'], ['history', 'State history'], ['audit', `Audit log (${current.audit.length})`], ['raw', 'Raw JSON']];
+  $('#result').className = '';
+  $('#result').innerHTML = `
+    <div class="kv">
+      <div>Status</div><div><span class="pill ${esc(req.status)}">${esc(req.status)}</span></div>
+      <div>Summary</div><div>${esc(exp.summary)}</div>
+      <div>Workflow</div><div>${esc(req.workflowId)} <span class="muted">v${req.workflowVersion}</span></div>
+      <div>Request id</div><div><code>${esc(req.id)}</code></div>
+      ${req.status === 'PENDING_RETRY' ? `<div>Next retry</div><div>${esc(req.nextRetryAt)} <span class="muted">(parked ${req.retryCount}×)</span></div>` : ''}
+    </div>
+    <div class="row" style="margin-top:0">${actions.join('')}</div>
+    <div class="tabs">${tabs.map(([k, t]) => `<button data-tab="${k}" class="${k === currentTab ? 'active' : ''}">${esc(t)}</button>`).join('')}</div>
+    <div class="box"><pre id="tabbody"></pre></div>
+    <div id="action-msg"></div>`;
+  $('#result').querySelectorAll('.tabs button').forEach((b) => b.onclick = () => { currentTab = b.dataset.tab; renderResult(); });
+  const body = {
+    explain: () => exp.text,
+    history: () => current.history.map((h) => `${h.at}  ${h.fromStatus ?? '∅'} → ${h.toStatus}  [${h.actor}]\n    ${h.reason}`).join('\n'),
+    audit: () => current.audit.map((e) => `#${e.seq} ${e.ts} ${e.type}${e.stage ? ' @' + e.stage : ''} (${e.actor})\n    ${JSON.stringify(e.data)}\n    hash ${e.hash.slice(0, 16)}… ← ${e.prevHash.slice(0, 16)}…`).join('\n'),
+    raw: () => JSON.stringify(req, null, 2),
+  }[currentTab]();
+  $('#tabbody').textContent = body;
+}
+async function doRetry() {
+  const r = await api(`/requests/${current.req.id}/retry`, { method: 'POST', body: {} });
+  if (!r.ok) { msg($('#action-msg'), 'err', errText(r)); return; }
+  await show(current.req.id); refreshAll();
+}
+async function doReview(decision) {
+  const note = prompt(`Note for ${decision} (optional):`) ?? '';
+  const r = await api(`/requests/${current.req.id}/review`, { method: 'POST', body: { decision, reviewer: 'ui.reviewer', note } });
+  if (!r.ok) { msg($('#action-msg'), 'err', errText(r)); return; }
+  await show(current.req.id); refreshAll();
+}
+
+// ---- list / deps / health
+async function refreshList() {
+  const rows = (await api('/requests?limit=25')).data.requests;
+  $('#list').innerHTML = rows.map((r) => `<tr class="click" onclick="show('${r.id}')"><td>${esc(r.createdAt.slice(11, 19))}</td><td>${esc(r.workflowId)}</td><td><span class="pill ${esc(r.status)}">${esc(r.status)}</span></td><td>${esc(r.currentStage)}</td><td><code>${esc(r.id.slice(0, 8))}</code></td></tr>`).join('') || '<tr><td colspan="5" class="muted">No requests yet</td></tr>';
+}
+async function refreshDeps() {
+  const deps = (await api('/admin/dependencies')).data.dependencies;
+  $('#deps').innerHTML = deps.map((d) => `
+    <div class="dep"><b>${esc(d.name)}</b> <span class="pill ${d.fault.mode === 'none' ? 'APPROVED' : 'MANUAL_REVIEW'}">${esc(d.fault.mode)}${d.fault.mode === 'fail_next' ? ' ×' + d.fault.remaining : ''}</span>
+      <div class="muted">${esc(d.description)}</div>
+      <div class="muted">calls ${d.stats.calls} · failures ${d.stats.failures} · replays ${d.stats.replays} · effects ${d.stats.effects}</div>
+      <div class="btns">
+        <button class="btn" onclick="fault('${d.name}',{mode:'down'})">Take down</button>
+        <button class="btn" onclick="fault('${d.name}',{mode:'fail_next',count:2})">Fail next 2</button>
+        <button class="btn" onclick="fault('${d.name}',{mode:'slow',latencyMs:3000})">Slow (3s)</button>
+        <button class="btn" onclick="fault('${d.name}',{mode:'none'})">Restore</button>
+      </div></div>`).join('');
+}
+async function fault(name, body) { await api(`/admin/dependencies/${name}/fault`, { method: 'POST', body }); refreshDeps(); }
+$('#process-retries').onclick = async () => { await api('/admin/process-retries', { method: 'POST', body: {} }); refreshAll(); if (current) show(current.req.id); };
+async function refreshHealth() {
+  const h = (await api('/health')).data;
+  const el = $('#chain'); el.textContent = 'audit chain: ' + h.auditChain; el.style.background = h.auditChain === 'intact' ? 'var(--okbg)' : 'var(--badbg)'; el.style.color = h.auditChain === 'intact' ? 'var(--ok)' : 'var(--bad)';
+}
+function refreshAll() { refreshList(); refreshDeps(); refreshHealth(); }
+$('#refresh').onclick = refreshAll;
+
+// ---- workflow configuration view
+async function loadWorkflowConfig() {
+  const id = $('#wf-config').value;
+  const r = await api('/workflows/' + id);
+  $('#wf-json').value = JSON.stringify(r.data.active, null, 2);
+  const active = r.data.active.version;
+  $('#wf-versions').innerHTML = `<table><thead><tr><th>Version</th><th>Created</th><th>Note</th><th></th></tr></thead><tbody>${r.data.versions.slice().reverse().map((v) => `<tr><td>v${v.version} ${v.version === active ? '<span class="pill APPROVED">active</span>' : ''}</td><td>${esc(v.createdAt.slice(0, 19).replace('T', ' '))}<div class="muted">${esc(v.createdBy)}</div></td><td>${esc(v.changeNote || '')}</td><td>${v.version === active ? '' : `<button class="btn" onclick="activate('${id}',${v.version})">Activate</button>`}</td></tr>`).join('')}</tbody></table>`;
+}
+$('#wf-config').onchange = loadWorkflowConfig;
+$('#wf-reload').onclick = loadWorkflowConfig;
+function parseDef() { try { return JSON.parse($('#wf-json').value); } catch (e) { msg($('#wf-msg'), 'err', 'Not valid JSON: ' + esc(e.message)); return null; } }
+$('#wf-validate').onclick = async () => {
+  const def = parseDef(); if (!def) return;
+  const r = await api('/workflows/validate', { method: 'POST', body: { definition: def } });
+  const warn = (r.data.warnings || []).map((w) => `<li>${esc(w)}</li>`).join('');
+  if (r.data.valid) msg($('#wf-msg'), 'ok', 'Definition is valid.' + (warn ? '<ul>' + warn + '</ul>' : ''));
+  else msg($('#wf-msg'), 'err', '<b>Invalid definition</b><ul>' + r.data.errors.map((e) => `<li>${esc(e)}</li>`).join('') + '</ul>');
+};
+$('#wf-publish').onclick = async () => {
+  const def = parseDef(); if (!def) return;
+  const r = await api('/workflows', { method: 'POST', body: { definition: def, changeNote: $('#wf-note').value, actor: 'ui.admin' } });
+  if (!r.ok) { msg($('#wf-msg'), 'err', errText(r)); return; }
+  msg($('#wf-msg'), 'ok', `Published ${esc(r.data.id)} <b>v${r.data.version}</b> and activated it for new requests.`);
+  workflows = (await api('/workflows')).data.workflows;
+  $('#wf').innerHTML = workflows.map((w) => `<option value="${esc(w.id)}">${esc(w.name)} (v${w.activeVersion})</option>`).join('');
+  $('#wf').value = $('#wf-config').value;
+  loadWorkflowConfig(); refreshHealth();
+};
+async function activate(id, version) {
+  await api(`/workflows/${id}/activate`, { method: 'POST', body: { version, actor: 'ui.admin' } });
+  loadWorkflowConfig(); refreshHealth();
+}
+
+init();
+</script>
+</body>
+</html>
