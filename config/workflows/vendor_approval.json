@@ -1,0 +1,131 @@
+{
+  "id": "vendor_approval",
+  "name": "Vendor Approval",
+  "description": "Document checks, sanctions screening that fails closed to manual review, risk rules, and contract-value routing.",
+  "idempotency": { "keyFields": ["vendor.registrationNumber"] },
+  "inputSchema": {
+    "type": "object",
+    "required": ["vendor", "requestedContractValue", "documents"],
+    "additionalProperties": false,
+    "properties": {
+      "vendor": {
+        "type": "object",
+        "required": ["name", "country", "registrationNumber", "category", "yearsInBusiness", "annualRevenue"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "country": { "type": "string", "minLength": 2, "maxLength": 2 },
+          "registrationNumber": { "type": "string", "minLength": 1 },
+          "category": { "enum": ["software", "hardware", "services", "logistics", "consulting"] },
+          "yearsInBusiness": { "type": "integer", "minimum": 0 },
+          "annualRevenue": { "type": "number", "minimum": 0 }
+        }
+      },
+      "requestedContractValue": { "type": "number", "exclusiveMinimum": 0 },
+      "documents": {
+        "type": "object",
+        "required": ["taxCertificate", "bankDetailsVerified"],
+        "additionalProperties": false,
+        "properties": { "taxCertificate": { "type": "boolean" }, "bankDetailsVerified": { "type": "boolean" } }
+      }
+    }
+  },
+  "initialStage": "document_checks",
+  "stages": {
+    "document_checks": {
+      "type": "rules",
+      "description": "Mandatory paperwork.",
+      "rules": [
+        {
+          "id": "tax_certificate",
+          "description": "A tax certificate must be provided",
+          "when": { "field": "input.documents.taxCertificate", "op": "eq", "value": true },
+          "onFail": "reject"
+        },
+        {
+          "id": "registration_format",
+          "description": "Registration number must be 6-20 characters of A-Z, 0-9 or '-'",
+          "when": { "field": "input.vendor.registrationNumber", "op": "matches", "value": "^[A-Z0-9-]{6,20}$" },
+          "onFail": "reject"
+        },
+        {
+          "id": "bank_details",
+          "description": "Bank details must be verified",
+          "when": { "field": "input.documents.bankDetailsVerified", "op": "eq", "value": true },
+          "onFail": "manual_review"
+        }
+      ],
+      "next": "sanctions_check"
+    },
+
+    "sanctions_check": {
+      "type": "dependency",
+      "description": "Sanctions / jurisdiction screening (simulated). Compliance-sensitive, so an outage fails closed to a human.",
+      "dependency": "sanctions_screening",
+      "input": { "name": { "ref": "input.vendor.name" }, "country": { "ref": "input.vendor.country" } },
+      "resultKey": "screening",
+      "timeoutMs": 2000,
+      "retry": { "maxAttempts": 2, "backoffMs": 50, "factor": 2 },
+      "onFailure": {
+        "action": "manual_review",
+        "reason": "Sanctions screening unavailable; compliance requires a human decision"
+      },
+      "next": "risk_rules"
+    },
+
+    "risk_rules": {
+      "type": "rules",
+      "description": "Risk and concentration checks.",
+      "rules": [
+        {
+          "id": "not_sanctioned",
+          "description": "Vendor must not be on a sanctions list",
+          "when": { "field": "deps.screening.sanctioned", "op": "eq", "value": false },
+          "onFail": "reject"
+        },
+        {
+          "id": "jurisdiction_risk",
+          "description": "High-risk jurisdictions need compliance review",
+          "when": { "field": "deps.screening.riskLevel", "op": "ne", "value": "high" },
+          "onFail": "manual_review"
+        },
+        {
+          "id": "min_track_record",
+          "description": "Vendors with under 2 years in business need review",
+          "when": { "field": "input.vendor.yearsInBusiness", "op": "gte", "value": 2 },
+          "onFail": "manual_review"
+        },
+        {
+          "id": "revenue_concentration",
+          "description": "Contract must not exceed 30% of the vendor's annual revenue",
+          "when": {
+            "left": { "ref": "input.requestedContractValue" },
+            "op": "lte",
+            "right": { "fn": "mul", "args": [{ "ref": "input.vendor.annualRevenue" }, 0.3] }
+          },
+          "onFail": "manual_review"
+        }
+      ],
+      "next": "value_routing"
+    },
+
+    "value_routing": {
+      "type": "branch",
+      "branches": [
+        { "id": "large_contract", "description": "Above 500,000", "when": { "field": "input.requestedContractValue", "op": "gt", "value": 500000 }, "goto": "executive_signoff" }
+      ],
+      "default": "auto_approve"
+    },
+
+    "executive_signoff": {
+      "type": "decision",
+      "outcome": "manual_review",
+      "reason": "Contracts above 500,000 require executive sign-off"
+    },
+    "auto_approve": {
+      "type": "decision",
+      "outcome": "approve",
+      "reason": "Vendor passed document, sanctions and risk checks"
+    }
+  }
+}
