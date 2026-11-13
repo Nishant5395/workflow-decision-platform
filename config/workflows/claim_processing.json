@@ -1,0 +1,144 @@
+{
+  "id": "claim_processing",
+  "name": "Insurance Claim Processing",
+  "description": "Intake checks, policy lookup, coverage rules, and amount-based routing (fast track / standard / fraud review).",
+  "idempotency": { "keyFields": ["claim.claimId"] },
+  "inputSchema": {
+    "type": "object",
+    "required": ["claim", "claimant", "documents"],
+    "additionalProperties": false,
+    "properties": {
+      "claim": {
+        "type": "object",
+        "required": ["claimId", "policyNumber", "type", "amount", "incidentDate", "reportedDate"],
+        "additionalProperties": false,
+        "properties": {
+          "claimId": { "type": "string", "minLength": 1 },
+          "policyNumber": { "type": "string", "minLength": 1 },
+          "type": { "enum": ["auto", "health", "property"] },
+          "amount": { "type": "number", "exclusiveMinimum": 0 },
+          "incidentDate": { "type": "string", "format": "date" },
+          "reportedDate": { "type": "string", "format": "date" }
+        }
+      },
+      "claimant": {
+        "type": "object",
+        "required": ["id", "name"],
+        "additionalProperties": false,
+        "properties": { "id": { "type": "string", "minLength": 1 }, "name": { "type": "string", "minLength": 1 } }
+      },
+      "documents": {
+        "type": "array",
+        "items": { "enum": ["invoice", "police_report", "medical_report", "photos"] },
+        "uniqueItems": true
+      }
+    }
+  },
+  "initialStage": "intake_checks",
+  "stages": {
+    "intake_checks": {
+      "type": "rules",
+      "description": "Mandatory intake checks on the claim itself.",
+      "rules": [
+        {
+          "id": "dates_consistent",
+          "description": "Claim must be reported on or after the incident date",
+          "when": { "field": "input.claim.reportedDate", "op": "gte", "right": { "ref": "input.claim.incidentDate" } },
+          "onFail": "reject"
+        },
+        {
+          "id": "invoice_attached",
+          "description": "An invoice must be attached",
+          "when": { "field": "input.documents", "op": "contains", "value": "invoice" },
+          "onFail": "reject"
+        },
+        {
+          "id": "timely_reporting",
+          "description": "Claims reported more than 30 days after the incident need review",
+          "when": {
+            "left": { "fn": "daysBetween", "args": [{ "ref": "input.claim.incidentDate" }, { "ref": "input.claim.reportedDate" }] },
+            "op": "lte",
+            "value": 30
+          },
+          "onFail": "manual_review"
+        }
+      ],
+      "next": "policy_lookup"
+    },
+
+    "policy_lookup": {
+      "type": "dependency",
+      "description": "Fetch policy status and coverage from the policy system (simulated).",
+      "dependency": "policy_service",
+      "input": { "policyNumber": { "ref": "input.claim.policyNumber" } },
+      "resultKey": "policy",
+      "timeoutMs": 2000,
+      "retry": { "maxAttempts": 3, "backoffMs": 100, "factor": 2 },
+      "onFailure": { "action": "park", "maxParkedRetries": 3, "afterExhausted": "manual_review", "retryDelayMs": 30000 },
+      "next": "coverage_rules"
+    },
+
+    "coverage_rules": {
+      "type": "rules",
+      "description": "Is the claim covered by the policy?",
+      "rules": [
+        {
+          "id": "policy_active",
+          "description": "Policy must be active",
+          "when": { "field": "deps.policy.active", "op": "eq", "value": true },
+          "onFail": "reject"
+        },
+        {
+          "id": "type_covered",
+          "description": "Claim type must be covered by the policy",
+          "when": { "field": "deps.policy.coveredTypes", "op": "contains", "right": { "ref": "input.claim.type" } },
+          "onFail": "reject"
+        },
+        {
+          "id": "within_policy_period",
+          "description": "Incident must fall inside the policy period",
+          "when": {
+            "all": [
+              { "field": "input.claim.incidentDate", "op": "gte", "right": { "ref": "deps.policy.startDate" } },
+              { "field": "input.claim.incidentDate", "op": "lte", "right": { "ref": "deps.policy.endDate" } }
+            ]
+          },
+          "onFail": "reject"
+        },
+        {
+          "id": "within_coverage_limit",
+          "description": "Claim amount must not exceed the coverage limit",
+          "when": { "field": "input.claim.amount", "op": "lte", "right": { "ref": "deps.policy.coverageLimit" } },
+          "onFail": "reject"
+        }
+      ],
+      "next": "amount_routing"
+    },
+
+    "amount_routing": {
+      "type": "branch",
+      "description": "Route by claim amount.",
+      "branches": [
+        { "id": "possible_fraud", "description": "Above 50,000", "when": { "field": "input.claim.amount", "op": "gt", "value": 50000 }, "goto": "fraud_review" },
+        { "id": "fast_track", "description": "5,000 or less", "when": { "field": "input.claim.amount", "op": "lte", "value": 5000 }, "goto": "fast_track_approve" }
+      ],
+      "default": "standard_approve"
+    },
+
+    "fraud_review": {
+      "type": "decision",
+      "outcome": "manual_review",
+      "reason": "Claims above 50,000 are reviewed by the special investigations unit"
+    },
+    "fast_track_approve": {
+      "type": "decision",
+      "outcome": "approve",
+      "reason": "Fast-track approval: covered claim of 5,000 or less"
+    },
+    "standard_approve": {
+      "type": "decision",
+      "outcome": "approve",
+      "reason": "Covered claim approved under standard processing"
+    }
+  }
+}
