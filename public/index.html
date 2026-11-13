@@ -147,7 +147,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 let samples = {}, workflows = [], current = null, currentTab = 'explain';
 
 async function api(path, opts = {}) {
-  const res = await fetch('/api' + path, { headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) }, ...opts, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  const res = await fetch('/api' + path, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) }, body: opts.body ? JSON.stringify(opts.body) : undefined });
   const text = await res.text();
   let data; try { data = JSON.parse(text); } catch { data = text; }
   return { ok: res.ok, status: res.status, data, headers: res.headers };
