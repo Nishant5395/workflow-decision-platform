@@ -1,0 +1,172 @@
+{
+  "loan_application": [
+    {
+      "name": "Strong applicant → approved",
+      "description": "Good credit, low debt-to-income, loan under 1,000,000.",
+      "expect": "APPROVED",
+      "payload": {
+        "applicant": { "id": "GOOD-1001", "name": "Asha Verma", "age": 35, "monthlyIncome": 80000, "monthlyDebt": 5000, "employmentStatus": "salaried" },
+        "loan": { "amount": 500000, "tenureMonths": 60, "purpose": "home" }
+      }
+    },
+    {
+      "name": "Under-age applicant → rejected",
+      "description": "Fails the mandatory minimum-age rule before any external call is made.",
+      "expect": "REJECTED",
+      "payload": {
+        "applicant": { "id": "GOOD-1002", "name": "Rohan Das", "age": 19, "monthlyIncome": 60000, "monthlyDebt": 0, "employmentStatus": "salaried" },
+        "loan": { "amount": 200000, "tenureMonths": 36, "purpose": "personal" }
+      }
+    },
+    {
+      "name": "Fair credit → manual review",
+      "description": "Score 650 is above the floor (550) but below the auto-approve threshold (700).",
+      "expect": "MANUAL_REVIEW",
+      "payload": {
+        "applicant": { "id": "FAIR-2001", "name": "Meera Nair", "age": 41, "monthlyIncome": 90000, "monthlyDebt": 8000, "employmentStatus": "self_employed" },
+        "loan": { "amount": 400000, "tenureMonths": 48, "purpose": "business" }
+      }
+    },
+    {
+      "name": "Poor credit → rejected",
+      "description": "Score 520 is below the floor; other rules also flag for review but reject wins.",
+      "expect": "REJECTED",
+      "payload": {
+        "applicant": { "id": "POOR-3001", "name": "Vikram Rao", "age": 38, "monthlyIncome": 70000, "monthlyDebt": 4000, "employmentStatus": "salaried" },
+        "loan": { "amount": 300000, "tenureMonths": 36, "purpose": "auto" }
+      }
+    },
+    {
+      "name": "Very large loan → senior review (branch)",
+      "description": "Passes every check, then the amount branch routes it to senior sign-off.",
+      "expect": "MANUAL_REVIEW",
+      "payload": {
+        "applicant": { "id": "GOOD-4001", "name": "Kabir Shah", "age": 45, "monthlyIncome": 400000, "monthlyDebt": 10000, "employmentStatus": "salaried" },
+        "loan": { "amount": 2000000, "tenureMonths": 120, "purpose": "home" }
+      }
+    },
+    {
+      "name": "High debt-to-income → rejected",
+      "description": "Computed DTI (existing debt + new EMI over income) is above 50%.",
+      "expect": "REJECTED",
+      "payload": {
+        "applicant": { "id": "GOOD-5001", "name": "Neha Kulkarni", "age": 33, "monthlyIncome": 30000, "monthlyDebt": 10000, "employmentStatus": "salaried" },
+        "loan": { "amount": 600000, "tenureMonths": 24, "purpose": "personal" }
+      }
+    }
+  ],
+  "claim_processing": [
+    {
+      "name": "Small covered claim → fast-track approval",
+      "description": "Covered claim of 5,000 or less is approved on the fast track.",
+      "expect": "APPROVED",
+      "payload": {
+        "claim": { "claimId": "CLM-1001", "policyNumber": "POL-1001", "type": "auto", "amount": 3500, "incidentDate": "2026-10-02", "reportedDate": "2026-10-05" },
+        "claimant": { "id": "C-77", "name": "Priya Menon" },
+        "documents": ["invoice", "photos"]
+      }
+    },
+    {
+      "name": "Mid-size covered claim → standard approval",
+      "description": "Between 5,000 and 50,000 goes through standard processing.",
+      "expect": "APPROVED",
+      "payload": {
+        "claim": { "claimId": "CLM-1002", "policyNumber": "POL-1002", "type": "health", "amount": 20000, "incidentDate": "2026-09-10", "reportedDate": "2026-09-12" },
+        "claimant": { "id": "C-78", "name": "Arjun Iyer" },
+        "documents": ["invoice", "medical_report"]
+      }
+    },
+    {
+      "name": "Very large claim → fraud review",
+      "description": "Above 50,000 is routed to the special investigations unit.",
+      "expect": "MANUAL_REVIEW",
+      "payload": {
+        "claim": { "claimId": "CLM-1003", "policyNumber": "POL-1003", "type": "property", "amount": 80000, "incidentDate": "2026-08-20", "reportedDate": "2026-08-25" },
+        "claimant": { "id": "C-79", "name": "Sunita Rao" },
+        "documents": ["invoice", "photos"]
+      }
+    },
+    {
+      "name": "Lapsed policy → rejected",
+      "description": "Coverage rules fail: policy inactive, nothing covered, limit exceeded.",
+      "expect": "REJECTED",
+      "payload": {
+        "claim": { "claimId": "CLM-1004", "policyNumber": "POL-LAPSED-9", "type": "auto", "amount": 12000, "incidentDate": "2026-07-01", "reportedDate": "2026-07-03" },
+        "claimant": { "id": "C-80", "name": "Dev Malhotra" },
+        "documents": ["invoice"]
+      }
+    },
+    {
+      "name": "Late reporting → manual review",
+      "description": "Reported 65 days after the incident; flagged at intake.",
+      "expect": "MANUAL_REVIEW",
+      "payload": {
+        "claim": { "claimId": "CLM-1005", "policyNumber": "POL-1005", "type": "auto", "amount": 9000, "incidentDate": "2026-08-01", "reportedDate": "2026-10-05" },
+        "claimant": { "id": "C-81", "name": "Isha Kapoor" },
+        "documents": ["invoice"]
+      }
+    },
+    {
+      "name": "Missing invoice → rejected",
+      "description": "Mandatory document missing; rejected at intake with no external call.",
+      "expect": "REJECTED",
+      "payload": {
+        "claim": { "claimId": "CLM-1006", "policyNumber": "POL-1006", "type": "auto", "amount": 4000, "incidentDate": "2026-10-01", "reportedDate": "2026-10-02" },
+        "claimant": { "id": "C-82", "name": "Manish Pillai" },
+        "documents": ["photos"]
+      }
+    }
+  ],
+  "vendor_approval": [
+    {
+      "name": "Established software vendor → approved",
+      "description": "Clean documents, low-risk country, contract well under revenue limits.",
+      "expect": "APPROVED",
+      "payload": {
+        "vendor": { "name": "Acme Software Pvt Ltd", "country": "IN", "registrationNumber": "REG-100234", "category": "software", "yearsInBusiness": 8, "annualRevenue": 5000000 },
+        "requestedContractValue": 400000,
+        "documents": { "taxCertificate": true, "bankDetailsVerified": true }
+      }
+    },
+    {
+      "name": "Sanctioned vendor → rejected",
+      "description": "The screening service flags the vendor name.",
+      "expect": "REJECTED",
+      "payload": {
+        "vendor": { "name": "BLOCKED Trading Co", "country": "IN", "registrationNumber": "BLK-998877", "category": "logistics", "yearsInBusiness": 10, "annualRevenue": 9000000 },
+        "requestedContractValue": 100000,
+        "documents": { "taxCertificate": true, "bankDetailsVerified": true }
+      }
+    },
+    {
+      "name": "Young vendor → manual review",
+      "description": "Only one year in business.",
+      "expect": "MANUAL_REVIEW",
+      "payload": {
+        "vendor": { "name": "Fresh Start Consulting", "country": "IN", "registrationNumber": "REG-200345", "category": "consulting", "yearsInBusiness": 1, "annualRevenue": 2000000 },
+        "requestedContractValue": 100000,
+        "documents": { "taxCertificate": true, "bankDetailsVerified": true }
+      }
+    },
+    {
+      "name": "Large contract → executive sign-off",
+      "description": "Passes all rules but the contract exceeds 500,000.",
+      "expect": "MANUAL_REVIEW",
+      "payload": {
+        "vendor": { "name": "BigBuild Hardware Ltd", "country": "IN", "registrationNumber": "REG-300456", "category": "hardware", "yearsInBusiness": 15, "annualRevenue": 20000000 },
+        "requestedContractValue": 800000,
+        "documents": { "taxCertificate": true, "bankDetailsVerified": true }
+      }
+    },
+    {
+      "name": "Missing tax certificate → rejected",
+      "description": "Mandatory document missing.",
+      "expect": "REJECTED",
+      "payload": {
+        "vendor": { "name": "No Paper Works", "country": "IN", "registrationNumber": "REG-400567", "category": "services", "yearsInBusiness": 5, "annualRevenue": 3000000 },
+        "requestedContractValue": 50000,
+        "documents": { "taxCertificate": false, "bankDetailsVerified": true }
+      }
+    }
+  ]
+}
