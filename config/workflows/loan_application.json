@@ -1,0 +1,160 @@
+{
+  "id": "loan_application",
+  "name": "Loan Application Approval",
+  "description": "Mandatory eligibility checks, bureau lookup, threshold-based risk rules, and value-based routing.",
+  "idempotency": { "keyFields": ["applicant.id", "loan.purpose"] },
+  "inputSchema": {
+    "type": "object",
+    "required": ["applicant", "loan"],
+    "additionalProperties": false,
+    "properties": {
+      "applicant": {
+        "type": "object",
+        "required": ["id", "name", "age", "monthlyIncome", "monthlyDebt", "employmentStatus"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "name": { "type": "string", "minLength": 1 },
+          "age": { "type": "integer", "minimum": 0, "maximum": 120 },
+          "monthlyIncome": { "type": "number", "minimum": 0 },
+          "monthlyDebt": { "type": "number", "minimum": 0 },
+          "employmentStatus": { "enum": ["salaried", "self_employed", "unemployed", "retired", "student"] }
+        }
+      },
+      "loan": {
+        "type": "object",
+        "required": ["amount", "tenureMonths", "purpose"],
+        "additionalProperties": false,
+        "properties": {
+          "amount": { "type": "number", "exclusiveMinimum": 0 },
+          "tenureMonths": { "type": "integer", "minimum": 1, "maximum": 360 },
+          "purpose": { "enum": ["home", "auto", "personal", "education", "business"] }
+        }
+      }
+    }
+  },
+  "initialStage": "mandatory_checks",
+  "stages": {
+    "mandatory_checks": {
+      "type": "rules",
+      "description": "Hard eligibility rules. Any failure rejects the application.",
+      "rules": [
+        {
+          "id": "min_age",
+          "description": "Applicant must be at least 21",
+          "when": { "field": "input.applicant.age", "op": "gte", "value": 21 },
+          "onFail": "reject"
+        },
+        {
+          "id": "age_at_maturity",
+          "description": "Applicant must be 70 or younger when the loan matures",
+          "when": {
+            "left": { "fn": "add", "args": [{ "ref": "input.applicant.age" }, { "fn": "div", "args": [{ "ref": "input.loan.tenureMonths" }, 12] }] },
+            "op": "lte",
+            "value": 70
+          },
+          "onFail": "reject"
+        },
+        {
+          "id": "employment_eligible",
+          "description": "Unemployed and student applicants are not eligible",
+          "when": { "field": "input.applicant.employmentStatus", "op": "nin", "value": ["unemployed", "student"] },
+          "onFail": "reject"
+        },
+        {
+          "id": "min_income",
+          "description": "Monthly income must be at least 15,000",
+          "when": { "field": "input.applicant.monthlyIncome", "op": "gte", "value": 15000 },
+          "onFail": "reject"
+        }
+      ],
+      "next": "credit_check"
+    },
+
+    "credit_check": {
+      "type": "dependency",
+      "description": "External credit bureau lookup (simulated).",
+      "dependency": "credit_bureau",
+      "input": { "applicantId": { "ref": "input.applicant.id" } },
+      "resultKey": "credit",
+      "timeoutMs": 2000,
+      "retry": { "maxAttempts": 3, "backoffMs": 100, "factor": 2 },
+      "onFailure": { "action": "park", "maxParkedRetries": 2, "afterExhausted": "manual_review", "retryDelayMs": 30000 },
+      "next": "risk_assessment"
+    },
+
+    "risk_assessment": {
+      "type": "rules",
+      "description": "Threshold checks using the bureau result. Reject outranks manual review.",
+      "rules": [
+        {
+          "id": "credit_score_floor",
+          "description": "Credit score must be at least 550",
+          "when": { "field": "deps.credit.score", "op": "gte", "value": 550 },
+          "onFail": "reject"
+        },
+        {
+          "id": "credit_score_good",
+          "description": "Credit scores from 550 to 699 need underwriter review",
+          "when": { "field": "deps.credit.score", "op": "gte", "value": 700 },
+          "onFail": "manual_review"
+        },
+        {
+          "id": "debt_to_income",
+          "description": "Monthly debt including the new EMI must not exceed 50% of income",
+          "when": {
+            "left": {
+              "fn": "div",
+              "args": [
+                { "fn": "add", "args": [{ "ref": "input.applicant.monthlyDebt" }, { "fn": "div", "args": [{ "ref": "input.loan.amount" }, { "ref": "input.loan.tenureMonths" }] }] },
+                { "ref": "input.applicant.monthlyIncome" }
+              ]
+            },
+            "op": "lte",
+            "value": 0.5
+          },
+          "onFail": "reject",
+          "reason": "Debt-to-income ratio (including new EMI) exceeds 50%"
+        },
+        {
+          "id": "open_loans",
+          "description": "No more than 4 open loans",
+          "when": { "field": "deps.credit.openLoans", "op": "lte", "value": 4 },
+          "onFail": "manual_review"
+        },
+        {
+          "id": "loan_to_income",
+          "description": "Loan amount should not exceed 60x monthly income",
+          "when": {
+            "left": { "ref": "input.loan.amount" },
+            "op": "lte",
+            "right": { "fn": "mul", "args": [{ "ref": "input.applicant.monthlyIncome" }, 60] }
+          },
+          "onFail": "manual_review"
+        }
+      ],
+      "next": "amount_routing"
+    },
+
+    "amount_routing": {
+      "type": "branch",
+      "description": "Large loans need senior sign-off.",
+      "branches": [
+        { "id": "high_value", "description": "Loan above 1,000,000", "when": { "field": "input.loan.amount", "op": "gt", "value": 1000000 }, "goto": "senior_review" }
+      ],
+      "default": "auto_approve"
+    },
+
+    "senior_review": {
+      "type": "decision",
+      "outcome": "manual_review",
+      "reason": "Loans above 1,000,000 require senior credit officer sign-off"
+    },
+
+    "auto_approve": {
+      "type": "decision",
+      "outcome": "approve",
+      "reason": "All mandatory and risk checks passed"
+    }
+  }
+}
